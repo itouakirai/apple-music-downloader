@@ -251,22 +251,24 @@ func conventSyllableTTMLToLRC(ttml string) (string, error) {
 									if len(iTunesMetadata.FindElement("translations").FindElements("translation")) > 0 {
 										xpath := fmt.Sprintf("//text[@for='%s']", item.SelectAttr("itunes:key").Value)
 										trans := iTunesMetadata.FindElement("translations").FindElement("translation").FindElement(xpath)
-										var transTxt string
-										if trans.SelectAttr("text") == nil {
-											var textTmp []string
-											for _, span := range trans.Child {
-												if _, ok := span.(*etree.CharData); ok {
-													textTmp = append(textTmp, span.(*etree.CharData).Data)
-												} /*else {
-													textTmp = append(textTmp, span.(*etree.Element).Text())
-												}*/
+										if trans != nil {
+											var transTxt string
+											if trans.SelectAttr("text") == nil {
+												var textTmp []string
+												for _, span := range trans.Child {
+													if _, ok := span.(*etree.CharData); ok {
+														textTmp = append(textTmp, span.(*etree.CharData).Data)
+													} /*else {
+														textTmp = append(textTmp, span.(*etree.Element).Text())
+													}*/
+												}
+												transTxt = strings.Join(textTmp, "")
+											} else {
+												transTxt = trans.SelectAttr("text").Value
 											}
-											transTxt = strings.Join(textTmp, "")
-										} else {
-											transTxt = trans.SelectAttr("text").Value
+											//fmt.Println(transTxt)
+											transLine = transBeginTime + transTxt
 										}
-										//fmt.Println(transTxt)
-										transLine = transBeginTime + transTxt
 									}
 								}
 							}
