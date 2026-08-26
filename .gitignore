@@ -2,9 +2,8 @@
 !.gitignore
 !.gitattributes
 !.dockerignore
+!/.github/
 !/config.yaml.example
-!/agent.js
-!/agent-arm64.js
 !/go.mod
 !/go.sum
 !/main.go
