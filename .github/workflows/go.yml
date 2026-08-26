@@ -22,8 +22,6 @@ jobs:
     - name: Create a new directory and copy files
       run: |
         mkdir -p alac
-        cp agent.js alac/
-        cp agent-arm64.js alac/
         cp config.yaml.example alac/config.yaml
         cp README.md alac/
         cp main.exe alac/
@@ -47,8 +45,6 @@ jobs:
     - name: Create a new directory and copy files
       run: |
         mkdir -p alac
-        cp agent.js alac/
-        cp agent-arm64.js alac/
         cp config.yaml.example alac/config.yaml
         cp README.md alac/
         cp main alac/
@@ -72,8 +68,6 @@ jobs:
     - name: Create a new directory and copy files
       run: |
         mkdir -p alac
-        cp agent.js alac/
-        cp agent-arm64.js alac/
         cp config.yaml.example alac/config.yaml
         cp README.md alac/
         cp main alac/
