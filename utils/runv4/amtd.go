@@ -13,7 +13,6 @@ import (
 	"time"
 )
 
-
 type template struct {
 	ctx   []u32
 	st    St
@@ -30,8 +29,14 @@ type templateResponse struct {
 	RBP   string `json:"rbp"`
 }
 
-func fetchTemplate(server, adam, uri string) (*template, error) {
-	endpoint := "http://" + server + "/?adamId=" + url.QueryEscape(adam) + "&uri=" + url.QueryEscape(uri)
+type liteResponse struct {
+	Code int              `json:"code"`
+	Msg  string           `json:"msg"`
+	Data templateResponse `json:"data"`
+}
+
+func fetchTemplate(baseURL, adam, uri string) (*template, error) {
+	endpoint := strings.TrimRight(baseURL, "/") + "/key?adamId=" + url.QueryEscape(adam) + "&uri=" + url.QueryEscape(uri)
 	client := http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Get(endpoint)
 	if err != nil {
@@ -39,19 +44,23 @@ func fetchTemplate(server, adam, uri string) (*template, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("key server returned %s", resp.Status)
+		return nil, fmt.Errorf("lite-server /key returned %s", resp.Status)
 	}
-	var data templateResponse
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+	var envelope liteResponse
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
 		return nil, err
 	}
+	if envelope.Code != 0 {
+		return nil, fmt.Errorf("lite-server /key returned code=%d msg=%s", envelope.Code, envelope.Msg)
+	}
+	data := envelope.Data
 	ctxRaw, err := base64.StdEncoding.DecodeString(data.Ctx)
 	if err != nil || len(ctxRaw) < 0x8000 {
-		return nil, errors.New("invalid ctx in key-server response")
+		return nil, errors.New("invalid ctx in lite-server response")
 	}
 	stateRaw, err := base64.StdEncoding.DecodeString(data.State)
 	if err != nil || len(stateRaw) < 0x2000 {
-		return nil, errors.New("invalid state in key-server response")
+		return nil, errors.New("invalid state in lite-server response")
 	}
 	parse := func(value string) (u32, error) {
 		value = strings.TrimPrefix(strings.TrimSpace(value), "0x")

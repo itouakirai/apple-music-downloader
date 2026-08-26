@@ -6,13 +6,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"golang.org/x/sync/errgroup"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
-	"time"
 	"sync"
-	"golang.org/x/sync/errgroup"
+	"time"
 
 	"main/utils/structs"
 
@@ -20,7 +20,9 @@ import (
 	"github.com/itouakirai/mp4ff/mp4"
 	"github.com/schollz/progressbar/v3"
 )
+
 const prefetchKey = "skd://itunes.apple.com/P000000000/s1/e1"
+
 var ErrTimeout = errors.New("response timed out")
 
 type TimedResponseBody struct {
@@ -43,7 +45,6 @@ type decryptResult struct {
 	RawOffset int64
 }
 
-
 func (b *TimedResponseBody) Read(p []byte) (int, error) {
 	n, err := b.body.Read(p)
 	if err != nil {
@@ -56,8 +57,91 @@ func (b *TimedResponseBody) Read(p []byte) (int, error) {
 	return n, err
 }
 
+const (
+	downloadMaxAttempts = 5                // 最多尝试次数
+	downloadIdleTimeout = 30 * time.Second // 30 秒没收到任何字节就认为卡死
+)
+
+// downloadWithResume 下载完整文件到内存，支持断点续传、空闲超时和重试。
+// 只有拿到 totalLen 字节才返回成功。
+func downloadWithResume(ctx context.Context, client *http.Client, fileUrl string,
+	header http.Header, totalLen int64, bar *progressbar.ProgressBar) (*bytes.Buffer, error) {
+
+	buf := &bytes.Buffer{}
+	var offset int64
+	backoff := 2 * time.Second
+
+	for attempt := 1; attempt <= downloadMaxAttempts; attempt++ {
+		if attempt > 1 {
+			fmt.Printf("Download interrupted at %d/%d bytes, retrying in %v\n", offset, totalLen, backoff)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(backoff):
+			}
+			if backoff < 30*time.Second {
+				backoff *= 2
+			}
+		}
+
+		// 每次尝试用独立的子 context，卡死时只取消本次连接
+		attemptCtx, attemptCancel := context.WithCancel(ctx)
+		req, err := http.NewRequestWithContext(attemptCtx, "GET", fileUrl, nil)
+		if err != nil {
+			attemptCancel()
+			return nil, err
+		}
+		req.Header = header
+		if offset > 0 {
+			req.Header.Set("Range", fmt.Sprintf("bytes=%d-", offset)) // 断点续传
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			attemptCancel()
+			continue
+		}
+		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+			resp.Body.Close()
+			attemptCancel()
+			return nil, fmt.Errorf("download failed: server returned %s", resp.Status)
+		}
+		if offset > 0 && resp.StatusCode != http.StatusPartialContent {
+			resp.Body.Close()
+			attemptCancel()
+			return nil, errors.New("server does not support Range requests, cannot resume")
+		}
+
+		// 空闲超时检测：没有新数据到达就取消本次请求，触发重试
+		timer := time.AfterFunc(downloadIdleTimeout, attemptCancel)
+		body := &TimedResponseBody{
+			timeout:   downloadIdleTimeout,
+			timer:     timer,
+			threshold: 1, // 只要读到字节就重置计时器
+			body:      resp.Body,
+		}
+
+		n, copyErr := io.Copy(io.MultiWriter(buf, bar), body)
+		resp.Body.Close()
+		timer.Stop()
+		attemptCancel()
+		offset += n
+
+		if copyErr == nil && offset == totalLen {
+			return buf, nil // 完整拿到，才算下载成功
+		}
+		if copyErr == nil {
+			copyErr = fmt.Errorf("short download: got %d of %d bytes", offset, totalLen)
+		}
+	}
+	return nil, fmt.Errorf("download failed after %d attempts (got %d/%d bytes)",
+		downloadMaxAttempts, offset, totalLen)
+}
 
 func Run(adamId string, playlistUrl string, outfile string, Config structs.ConfigSet) error {
+	if Config.LiteServer == "" {
+		return errors.New("lite-server is not configured in config.yaml")
+	}
 	var err error
 	var optstimeout uint
 	optstimeout = 0
@@ -131,8 +215,7 @@ func Run(adamId string, playlistUrl string, outfile string, Config structs.Confi
 			return err
 		}
 		defer do.Body.Close()
-		if do.ContentLength < int64(Config.MaxMemoryLimit * 1024 * 1024) {
-			var buffer bytes.Buffer
+		if do.ContentLength < int64(Config.MaxMemoryLimit*1024*1024) {
 			bar := progressbar.NewOptions64(
 				do.ContentLength,
 				progressbar.OptionClearOnFinish(),
@@ -151,8 +234,12 @@ func Run(adamId string, playlistUrl string, outfile string, Config structs.Confi
 					BarEnd:        "",
 				}),
 			)
-			io.Copy(io.MultiWriter(&buffer, bar), do.Body)
-			body = &buffer
+			buffer, err := downloadWithResume(ctx, client, fileUrl.String(), header, do.ContentLength, bar)
+			if err != nil {
+				return err // 下载没完成就失败退出，绝不进入解密
+			}
+
+			body = buffer
 			fmt.Print("Downloaded\n")
 		} else {
 			body = do.Body
@@ -161,11 +248,8 @@ func Run(adamId string, playlistUrl string, outfile string, Config structs.Confi
 
 	var totalLen int64
 	totalLen = do.ContentLength
-	//key Server
-	//keyServer := fmt.Sprintf("127.0.0.1:40020")
-	keyServer := Config.KeyServer
 
-	err = downloadAndDecryptFile(keyServer, body, outfile, adamId, segments, totalLen, Config)
+	err = downloadAndDecryptFile(Config.LiteServer, body, outfile, adamId, segments, totalLen, Config)
 	if err != nil {
 		return err
 	}
@@ -173,7 +257,7 @@ func Run(adamId string, playlistUrl string, outfile string, Config structs.Confi
 	return nil
 }
 
-func downloadAndDecryptFile(keyServer string, in io.Reader, outfile string,
+func downloadAndDecryptFile(liteServer string, in io.Reader, outfile string,
 	adamId string, playlistSegments []*m3u8.MediaSegment, totalLen int64, Config structs.ConfigSet) error {
 	var buffer bytes.Buffer
 	var outBuf *bufio.Writer
@@ -214,7 +298,7 @@ func downloadAndDecryptFile(keyServer string, in io.Reader, outfile string,
 	// 'segment' in m3u8 == 'fragment' in mp4ff
 	//fmt.Println("Starting decryption...")
 	bar := progressbar.NewOptions64(totalLen,
-		progressbar.OptionClearOnFinish(),
+		//progressbar.OptionClearOnFinish(),
 		progressbar.OptionSetElapsedTime(false),
 		progressbar.OptionSetPredictTime(false),
 		progressbar.OptionShowElapsedTimeOnFinish(),
@@ -255,7 +339,7 @@ func downloadAndDecryptFile(keyServer string, in io.Reader, outfile string,
 					// results 通道已关闭，说明所有解密完成，且全部写入完毕
 					return nil
 				}
-				
+
 				// 将乱序到达的结果放入缓冲区
 				buffer[res.Seq] = res
 
@@ -267,7 +351,7 @@ func downloadAndDecryptFile(keyServer string, in io.Reader, outfile string,
 							return fmt.Errorf("encode fragment seq %d failed: %w", expectedSeq, err)
 						}
 						bar.Add64(readyRes.RawOffset)
-						
+
 						// 清理内存并期待下一个
 						delete(buffer, expectedSeq)
 						expectedSeq++
@@ -298,7 +382,7 @@ func downloadAndDecryptFile(keyServer string, in io.Reader, outfile string,
 					if err := DecryptFragment(job.Frag, tracks, job.Tmpl); err != nil {
 						return fmt.Errorf("decryptFragment seq %d: %w", job.Seq, err)
 					}
-					
+
 					// 提交解密结果
 					select {
 					case results <- &decryptResult{
@@ -348,14 +432,14 @@ func downloadAndDecryptFile(keyServer string, in io.Reader, outfile string,
 			if segment == nil {
 				return errors.New("segment number out of sync")
 			}
-			
+
 			key := segment.Key
 			if key != nil && (i < 2) {
 				if key.URI == prefetchKey {
+					// 预取模板是写死的，直接使用，省去一次 /key 请求
 					tmpl = prefetchTemplate()
-					//tmpl, err = fetchTemplate(keyServer, "0", prefetchKey)
 				} else {
-					tmpl, err = fetchTemplate(keyServer, adamId, key.URI)
+					tmpl, err = fetchTemplate(liteServer, adamId, key.URI)
 				}
 				if err != nil {
 					return err
@@ -405,6 +489,7 @@ func downloadAndDecryptFile(keyServer string, in io.Reader, outfile string,
 	}
 	return nil
 }
+
 // Remove boxes in the init segment that are known to cause compatibility issues
 func sanitizeInit(init *mp4.InitSegment) error {
 	traks := init.Moov.Traks
@@ -479,7 +564,7 @@ func parseMediaPlaylist(r io.ReadCloser) ([]*m3u8.MediaSegment, error) {
 	return mediaPlaylist.Segments, nil
 }
 
-//pasing
+// pasing
 func ReadInitSegment(r io.Reader) (*mp4.InitSegment, uint64, error) {
 	var offset uint64 = 0
 	init := mp4.NewMP4Init()
@@ -570,7 +655,6 @@ func TransformInit(init *mp4.InitSegment) (map[uint32]mp4.DecryptTrackInfo, erro
 	}
 	return tracks, nil
 }
-
 
 // Decryption function dispatcher
 func cbcsDecryptRaw(data []byte, decryptBlockLen, skipBlockLen int, tmpl *template) error {

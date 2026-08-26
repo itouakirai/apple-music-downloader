@@ -11,7 +11,7 @@
 **Must be installed first:**
 
 - **[MP4Box](https://gpac.io/downloads/gpac-nightly-builds/)** - Ensure it's correctly added to your environment variables
-- **[wrapper](https://github.com/WorldObservationLog/wrapper)** - Decryption program must be running before use
+- **[wrapper-lite](https://github.com/WorldObservationLog/wrapper/tree/lite)** - Decryption program must be running before use. Point `lite-server` in `config.yaml` to its HTTP API (e.g. `http://127.0.0.1:8080`)
 
 **Optional (for MV download):**
 
@@ -56,7 +56,7 @@
 
 ### Running with Docker
 
-1. Ensure the [wrapper](https://github.com/WorldObservationLog/wrapper) decryption program is running
+1. Ensure the [wrapper-lite](https://github.com/WorldObservationLog/wrapper/tree/lite) decryption program is running and `lite-server` is set in `config.yaml`
 
 2. Start the downloader:
 
@@ -100,7 +100,7 @@ docker run --network host -v ./downloads:/downloads -v ./config.yaml:/app/config
 
 ### Running Locally (Go)
 
-1. Ensure the [wrapper](https://github.com/WorldObservationLog/wrapper) decryption program is running
+1. Ensure the [wrapper-lite](https://github.com/WorldObservationLog/wrapper/tree/lite) decryption program is running and `lite-server` is set in `config.yaml`
 
 2. **Download albums:**
    ```bash
@@ -190,6 +190,6 @@ proxy: "socks5://127.0.0.1:1080"
 
 ## 👏 Special Thanks
 
-- **chocomint** - Created `agent-arm64.js`
+- **WorldObservationLog** - Created [wrapper / wrapper-lite](https://github.com/WorldObservationLog/wrapper) (backend decryption service)
 
 ---

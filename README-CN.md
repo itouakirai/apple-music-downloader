@@ -11,7 +11,7 @@
 **必须首先安装：**
 
 - **[MP4Box](https://gpac.io/downloads/gpac-nightly-builds/)** - 确保已正确添加到环境变量
-- **[wrapper](https://github.com/WorldObservationLog/wrapper)** - 解密程序必须在使用前运行
+- **[wrapper-lite](https://github.com/WorldObservationLog/wrapper/tree/lite)** - 解密程序必须在使用前运行，并在 `config.yaml` 中将 `lite-server` 指向其 HTTP 接口（例如 `http://127.0.0.1:8080`）
 
 **可选（用于 MV 下载）：**
 
@@ -56,7 +56,7 @@
 
 ### 使用 Docker 运行
 
-1. 确保 [wrapper](https://github.com/WorldObservationLog/wrapper) 解密程序正在运行
+1. 确保 [wrapper-lite](https://github.com/WorldObservationLog/wrapper/tree/lite) 解密程序正在运行，且 `config.yaml` 中已配置 `lite-server`
 
 2. 启动下载器：
 
@@ -100,7 +100,7 @@ docker run --network host -v ./downloads:/downloads -v ./config.yaml:/app/config
 
 ### 本地运行 (Go)
 
-1. 确保 [wrapper](https://github.com/WorldObservationLog/wrapper) 解密程序正在运行
+1. 确保 [wrapper-lite](https://github.com/WorldObservationLog/wrapper/tree/lite) 解密程序正在运行，且 `config.yaml` 中已配置 `lite-server`
 
 2. **下载专辑：**
    ```bash
@@ -190,6 +190,6 @@ proxy: "socks5://127.0.0.1:1080"
 
 ## 👏 特别感谢
 
-- **chocomint** - 构建了 `agent-arm64.js`
+- **WorldObservationLog** - 开发了 [wrapper / wrapper-lite](https://github.com/WorldObservationLog/wrapper)（后端解密服务）
 
 ---
