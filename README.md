@@ -48,7 +48,7 @@
 | `aac-downmix` | audio-stereo-downmix | ✅ |
 | `MV` | Music Video | ✅ |
 
-> **Note:** For `aac-lc`, `MV`, and `lyrics`, you must provide a valid `media-user-token` from an active subscription.
+> **Note:** For `station`, and `lyrics`, you must provide a valid `media-user-token` from an active subscription.
 
 ---
 

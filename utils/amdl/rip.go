@@ -7,6 +7,7 @@ import (
 	"main/utils/lyrics"
 	"main/utils/runv3"
 	"main/utils/runv4"
+	"main/utils/runv5"
 	"main/utils/task"
 	"os"
 	"os/exec"
@@ -21,8 +22,8 @@ func ripTrack(track *task.Track, token string, mediaUserToken string) {
 
 	//mv dl dev
 	if track.Type == "music-videos" {
-		if len(mediaUserToken) <= 50 {
-			fmt.Println("meida-user-token is not set, skip MV dl")
+		if len(mediaUserToken) <= 50 && Config.LiteServer == "" {
+			fmt.Println("media-user-token is not set and no lite-server, skip MV dl")
 			counter.Success++
 			return
 		}
@@ -201,20 +202,33 @@ func ripTrack(track *task.Track, token string, mediaUserToken string) {
 	}
 
 	if needDlAacLc {
-		if len(mediaUserToken) <= 50 {
-			fmt.Println("Invalid media-user-token")
-			counter.Error++
-			return
-		}
-		_, err := runv3.Run(track.ID, trackPath, token, mediaUserToken, false, "")
-		if err != nil {
-			fmt.Println("Failed to dl aac-lc:", err)
-			if err.Error() == "Unavailable" {
-				counter.Unavailable++
+		if Config.LiteServer != "" {
+			_, err := runv5.Run(track.ID, trackPath, token, mediaUserToken, false, Config.LiteServer)
+			if err != nil {
+				fmt.Println("Failed to dl aac-lc via lite-server:", err)
+				if err.Error() == "Unavailable" {
+					counter.Unavailable++
+					return
+				}
+				counter.Error++
 				return
 			}
-			counter.Error++
-			return
+		} else {
+			if len(mediaUserToken) <= 50 {
+				fmt.Println("Invalid media-user-token")
+				counter.Error++
+				return
+			}
+			_, err := runv3.Run(track.ID, trackPath, token, mediaUserToken, false, "")
+			if err != nil {
+				fmt.Println("Failed to dl aac-lc:", err)
+				if err.Error() == "Unavailable" {
+					counter.Unavailable++
+					return
+				}
+				counter.Error++
+				return
+			}
 		}
 	} else {
 		trackM3u8Url, _, err := extractMedia(track.M3u8, false)

@@ -139,8 +139,8 @@ func Main() {
 					continue
 				}
 				counter.Total++
-				if len(Config.MediaUserToken) <= 50 {
-					fmt.Println(": meida-user-token is not set, skip MV dl")
+				if len(Config.MediaUserToken) <= 50 && Config.LiteServer == "" {
+					fmt.Println(": media-user-token is not set and no lite-server, skip MV dl")
 					counter.Success++
 					continue
 				}

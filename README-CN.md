@@ -48,7 +48,7 @@
 | `aac-downmix` | audio-stereo-downmix | ✅ |
 | `MV` | 音乐视频 | ✅ |
 
-> **注意：** 对于 `aac-lc`、`MV` 和 `歌词`，必须提供有效订阅的 `media-user-token`。
+> **注意：** 对于 `station` 和 `歌词`，必须提供有效订阅的 `media-user-token`。
 
 ---
 

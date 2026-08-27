@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"main/utils/ampapi"
 	"main/utils/runv3"
+	"main/utils/runv5"
 	"main/utils/task"
 	"os"
 	"os/exec"
@@ -57,19 +58,38 @@ func mvDownloader(adamID string, saveDir string, token string, storefront string
 		return nil
 	}
 
-	mvm3u8url, _, _, _ := runv3.GetWebplayback(adamID, token, mediaUserToken, true)
+	useLite := Config.LiteServer != ""
+	mvm3u8url, _, _, err := runv3.GetWebplayback(adamID, token, mediaUserToken, true)
+	if useLite {
+		mvm3u8url, _, _, err = runv5.GetWebplayback(adamID, Config.LiteServer, true)
+	}
 	if mvm3u8url == "" {
+		if err != nil {
+			return err
+		}
 		return errors.New("media-user-token may wrong or expired")
 	}
 
 	os.MkdirAll(saveDir, os.ModePerm)
 	videom3u8url, _ := extractVideo(mvm3u8url)
-	videokeyAndUrls, _ := runv3.Run(adamID, videom3u8url, token, mediaUserToken, true, "")
-	_ = runv3.ExtMvData(videokeyAndUrls, vidPath)
+	var videokeyAndUrls string
+	if useLite {
+		videokeyAndUrls, _ = runv5.Run(adamID, videom3u8url, token, mediaUserToken, true, Config.LiteServer)
+		_ = runv5.ExtMvData(videokeyAndUrls, vidPath)
+	} else {
+		videokeyAndUrls, _ = runv3.Run(adamID, videom3u8url, token, mediaUserToken, true, "")
+		_ = runv3.ExtMvData(videokeyAndUrls, vidPath)
+	}
 	defer os.Remove(vidPath)
 	audiom3u8url, _ := extractMvAudio(mvm3u8url)
-	audiokeyAndUrls, _ := runv3.Run(adamID, audiom3u8url, token, mediaUserToken, true, "")
-	_ = runv3.ExtMvData(audiokeyAndUrls, audPath)
+	var audiokeyAndUrls string
+	if useLite {
+		audiokeyAndUrls, _ = runv5.Run(adamID, audiom3u8url, token, mediaUserToken, true, Config.LiteServer)
+		_ = runv5.ExtMvData(audiokeyAndUrls, audPath)
+	} else {
+		audiokeyAndUrls, _ = runv3.Run(adamID, audiom3u8url, token, mediaUserToken, true, "")
+		_ = runv3.ExtMvData(audiokeyAndUrls, audPath)
+	}
 	defer os.Remove(audPath)
 
 	tags := []string{
