@@ -547,16 +547,8 @@ func extractMedia(b string, more_mode bool) (string, string, error) {
 			}
 		} else {
 			if variant.Codecs == "alac" {
-				fmt.Println("MATCH ALAC:", variant.Audio)
-
 				split := strings.Split(variant.Audio, "-")
-				fmt.Println(split)
-
 				length := len(split)
-				fmt.Println("SampleRate =", split[length-2])
-				fmt.Println("BitDepth   =", split[length-1])
-				fmt.Println("AlacMax    =", Config.AlacMax)
-
 				length_int, err := strconv.Atoi(split[length-2])
 				if err != nil {
 					return "", "", err

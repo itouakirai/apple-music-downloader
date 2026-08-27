@@ -392,10 +392,10 @@ func extsong(b string) bytes.Buffer {
 }
 
 // Run 与 runv3.Run 签名一致，调用方可以无缝切换。authtoken / mutoken 不再使用，
-// serverUrl 为 wrapper-lite 地址（如 "http://127.0.0.1:8080"），
-// license 会发到 serverUrl + "/license"，webplayback 走 serverUrl + "/webplayback"。
-func Run(adamId string, trackpath string, authtoken string, mutoken string, mvmode bool, serverUrl string) (string, error) {
-	if serverUrl == "" {
+// liteServerUrl 为 wrapper-lite 地址（如 "http://127.0.0.1:8080"），
+// license 会发到 liteServerUrl + "/license"，webplayback 走 liteServerUrl + "/webplayback"。
+func Run(adamId string, trackpath string, authtoken string, mvmode bool, liteServerUrl string) (string, error) {
+	if liteServerUrl == "" {
 		return "", errors.New("lite-server is not configured")
 	}
 	var keystr string //for mv key
@@ -409,7 +409,7 @@ func Run(adamId string, trackpath string, authtoken string, mutoken string, mvmo
 			return "", err
 		}
 	} else {
-		fileurl, kidBase64, uriPrefix, err = GetWebplayback(adamId, serverUrl, false)
+		fileurl, kidBase64, uriPrefix, err = GetWebplayback(adamId, liteServerUrl, false)
 		if err != nil {
 			return "", err
 		}
@@ -431,7 +431,7 @@ func Run(adamId string, trackpath string, authtoken string, mutoken string, mvmo
 		AfterRequest:  AfterRequest,
 	}
 	key.CdmInit()
-	keystr, keybt, err := key.GetKey(ctx, serverUrl+"/license", pssh, nil)
+	keystr, keybt, err := key.GetKey(ctx, liteServerUrl+"/license", pssh, nil)
 	if err != nil {
 		fmt.Println(err)
 		return "", err

@@ -139,8 +139,8 @@ func Main() {
 					continue
 				}
 				counter.Total++
-				if len(Config.MediaUserToken) <= 50 && Config.LiteServer == "" {
-					fmt.Println(": media-user-token is not set and no lite-server, skip MV dl")
+				if Config.LiteServer == "" {
+					fmt.Println(": lite-server is not set, skip MV dl")
 					counter.Success++
 					continue
 				}
@@ -160,7 +160,7 @@ func Main() {
 					mvSaveDir = Config.MVSaveFolder
 				}
 				storefront, albumId = checkUrl(urlRaw, "mv")
-				err := mvDownloader(albumId, mvSaveDir, token, storefront, Config.MediaUserToken, nil)
+				err := mvDownloader(albumId, mvSaveDir, token, storefront, nil)
 				if err != nil {
 					fmt.Println("\u26A0 Failed to dl MV:", err)
 					counter.Error++
