@@ -185,7 +185,7 @@ func ripTrack(track *task.Track, token string, mediaUserToken string) {
 	//get lrc
 	var lrc string = ""
 	if Config.EmbedLrc || Config.SaveLrcFile {
-		lrcStr, err := lyrics.Get(track.Storefront, track.ID, Config.LrcType, Config.Language, Config.LrcFormat, token, mediaUserToken)
+		lrcStr, err := lyrics.Get(track.ID, Config.LrcType, Config.Language, Config.LrcFormat, Config.LiteServer)
 		if err != nil {
 			fmt.Println(err)
 		} else {

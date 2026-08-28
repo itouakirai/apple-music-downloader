@@ -5,35 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/beevik/etree"
-	"main/utils/httputil"
+	//"main/utils/httputil"
 )
 
-type SongLyrics struct {
-	Data []struct {
-		Id         string `json:"id"`
-		Type       string `json:"type"`
-		Attributes struct {
-			Ttml              string `json:"ttml"`
-			TtmlLocalizations string `json:"ttmlLocalizations"`
-			PlayParams        struct {
-				Id          string `json:"id"`
-				Kind        string `json:"kind"`
-				CatalogId   string `json:"catalogId"`
-				DisplayType int    `json:"displayType"`
-			} `json:"playParams"`
-		} `json:"attributes"`
-	} `json:"data"`
-}
-
-func Get(storefront, songId, lrcType, language, lrcFormat, token, mediaUserToken string) (string, error) {
-	if len(mediaUserToken) < 50 {
-		return "", errors.New("MediaUserToken not set")
-	}
-
-	ttml, err := getSongLyrics(songId, storefront, token, mediaUserToken, lrcType, language)
+func Get(songId, lrcType, language, lrcFormat, liteServer string) (string, error) {
+	ttml, err := getSongLyrics(songId, liteServer, lrcType, language)
 	if err != nil {
 		return "", err
 	}
@@ -50,32 +30,38 @@ func Get(storefront, songId, lrcType, language, lrcFormat, token, mediaUserToken
 	return lrc, nil
 }
 
-func getSongLyrics(songId string, storefront string, token string, userToken string, lrcType string, language string) (string, error) {
-	req, err := http.NewRequest("GET",
-		fmt.Sprintf("https://amp-api.music.apple.com/v1/catalog/%s/songs/%s/%s?l=%s&extend=ttmlLocalizations", storefront, songId, lrcType, language), nil)
+func getSongLyrics(songId string, liteServer string, lrcType string, language string) (string, error) {
+	if liteServer == "" {
+		return "", errors.New("lite-server is not configured")
+	}
+	isSyllable := "1"
+	if lrcType == "lyrics" {
+		isSyllable = "0"
+	}
+	endpoint := strings.TrimRight(liteServer, "/") + "/lyrics?adamId=" + url.QueryEscape(songId) + "&language=" + url.QueryEscape(language) + "&syllable=" + isSyllable
+	resp, err := http.Get(endpoint)
 	if err != nil {
+		fmt.Println("Error connecting to lite-server:", err)
 		return "", err
 	}
-	req.Header.Set("Origin", "https://music.apple.com")
-	req.Header.Set("Referer", "https://music.apple.com/")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
-	cookie := http.Cookie{Name: "media-user-token", Value: userToken}
-	req.AddCookie(&cookie)
-	do, err := httputil.Client.Do(req)
-	if err != nil {
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", errors.New(resp.Status)
+	}
+	var envelope struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			Lyrics string `json:"lyrics"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
 		return "", err
 	}
-	defer do.Body.Close()
-	obj := new(SongLyrics)
-	_ = json.NewDecoder(do.Body).Decode(&obj)
-	if obj.Data != nil {
-		if len(obj.Data[0].Attributes.Ttml) > 0 {
-			return obj.Data[0].Attributes.Ttml, nil
-		}
-		return obj.Data[0].Attributes.TtmlLocalizations, nil
-	} else {
-		return "", errors.New("failed to get lyrics")
+	if envelope.Code != 0 {
+		return "", fmt.Errorf("lite-server /lyrics returned code=%d msg=%s", envelope.Code, envelope.Msg)
 	}
+	return envelope.Data.Lyrics ,nil
 }
 
 // Use for detect if lyrics have CJK, will be replaced by transliteration if exist.
