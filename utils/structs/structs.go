@@ -6,6 +6,7 @@ type ConfigSet struct {
 	AuthorizationToken         string `yaml:"authorization-token"`
 	Language                   string `yaml:"language"`
 	SaveLrcFile                bool   `yaml:"save-lrc-file"`
+	LrcExtra                   string `yaml:"lrc-extra"`
 	LrcType                    string `yaml:"lrc-type"`
 	LrcFormat                  string `yaml:"lrc-format"`
 	SaveAnimatedArtwork        bool   `yaml:"save-animated-artwork"`

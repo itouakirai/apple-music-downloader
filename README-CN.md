@@ -21,7 +21,7 @@
 
 ## ✨ 功能特性
 
-1. **内嵌封面和 LRC 歌词** - 需要 `media-user-token`（见下方说明）
+1. **内嵌封面和 LRC 歌词**
 2. **逐词与未同步歌词** 支持
 3. **歌手专辑下载** - 自动下载歌手的所有专辑
    ```bash
@@ -48,7 +48,7 @@
 | `aac-downmix` | audio-stereo-downmix | ✅ |
 | `MV` | 音乐视频 | ✅ |
 
-> **注意：** 对于 `station` 和 `歌词`，必须提供有效订阅的 `media-user-token`。
+> **注意：** 对于 `station`，必须提供有效订阅的 `media-user-token`。
 
 ---
 
@@ -146,7 +146,7 @@ docker run --network host -v ./downloads:/downloads -v ./config.yaml:/app/config
 
 ---
 
-## 📝 获取 media-user-token（用于歌词）
+## 📝 获取 media-user-token（用于station）
 
 1. 打开 [Apple Music](https://music.apple.com) 并登录
 2. 打开开发者工具（F12）
@@ -157,21 +157,8 @@ docker run --network host -v ./downloads:/downloads -v ./config.yaml:/app/config
 
 ---
 
-## 🌐 获取翻译和发音歌词（Beta）
-
-> **注意：** 此功能目前处于测试阶段。
-
-1. 打开 [Apple Music Beta](https://beta.music.apple.com) 并登录
-2. 打开开发者工具（F12），切换到 **Network** 标签页
-3. 搜索支持翻译/发音歌词的歌曲（推荐 K-Pop 歌曲）
-4. 按 **Ctrl+R** 刷新页面，让开发者工具捕获网络数据
-5. 播放歌曲并点击歌词按钮 - 查找名为 `syllable-lyrics` 的请求
-6. 停止录制（点击左上角红色圆圈按钮），然后选择 **Fetch/XHR** 标签
-7. 点击 `syllable-lyrics` 请求查看详情
-8. 找到包含以下格式的 URL：`.../syllable-lyrics?l=<language_code>&extend=ttmlLocalizations`
-9. 复制语言值并粘贴到 `config.yaml` 中
-10. **可选：** 如需禁用发音，在 config.yaml 中移除对应值：`...%5D=<remove_this_value>&extend...`
-11. 保存并照常运行脚本
+## 🌐 翻译和发音歌词
+设置config配置文件中的lrc-extra选项即可
 
 ---
 

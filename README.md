@@ -21,7 +21,7 @@
 
 ## ✨ Features
 
-1. **Inline Covers & LRC Lyrics** - Requires `media-user-token` (see instructions below)
+1. **Inline Covers & LRC Lyrics**
 2. **Word-by-word & Out-of-sync Lyrics** support
 3. **Artist Album Download** - Automatically download all albums from an artist
    ```bash
@@ -48,7 +48,7 @@
 | `aac-downmix` | audio-stereo-downmix | ✅ |
 | `MV` | Music Video | ✅ |
 
-> **Note:** For `station`, and `lyrics`, you must provide a valid `media-user-token` from an active subscription.
+> **Note:** For `station`, you must provide a valid `media-user-token` from an active subscription.
 
 ---
 
@@ -146,7 +146,7 @@ docker run --network host -v ./downloads:/downloads -v ./config.yaml:/app/config
 
 ---
 
-## 📝 Getting media-user-token (For Lyrics)
+## 📝 Getting media-user-token (For station)
 
 1. Open [Apple Music](https://music.apple.com) and log in
 2. Open Developer Tools (F12)
@@ -157,21 +157,8 @@ docker run --network host -v ./downloads:/downloads -v ./config.yaml:/app/config
 
 ---
 
-## 🌐 Getting Translation & Pronunciation Lyrics (Beta)
-
-> **Note:** These features are currently in beta.
-
-1. Open [Apple Music Beta](https://beta.music.apple.com) and log in
-2. Open Developer Tools (F12) and switch to the **Network** tab
-3. Search for a song that supports translation/pronunciation lyrics (K-Pop songs recommended)
-4. Press **Ctrl+R** to refresh and let DevTools capture network traffic
-5. Play the song and click the lyrics button - look for a request named `syllable-lyrics`
-6. Stop recording (click the red circle button), then select the **Fetch/XHR** tab
-7. Click on the `syllable-lyrics` request to view details
-8. Find the URL containing: `.../syllable-lyrics?l=<language_code>&extend=ttmlLocalizations`
-9. Copy the language value and paste it into `config.yaml`
-10. **Optional:** To disable pronunciation, remove the corresponding value in config.yaml: `...%5D=<remove_this_value>&extend...`
-11. Save and run the script as usual
+## 🌐Translation & Pronunciation Lyrics 
+Set lrc-extra in `config.yaml`
 
 ---
 
