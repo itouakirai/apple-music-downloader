@@ -1,4 +1,4 @@
-media-user-token: "your-media-user-token" #If you need to obtain lyrics and aac-lc, need to change it
+media-user-token: "your-media-user-token" #If you need to obtain station, need to change it
 authorization-token: "your-authorization-token" #You don't need to change it; it can automatically obtain token
 language: ""         #supportedLanguage by each storefront --> https://gist.github.com/itouakirai/c8ba9df9dc65bd300094103b058731d0
 lrc-extra: ""        #translation or pronunciation
@@ -20,7 +20,6 @@ aac-save-folder: AM-DL-AAC downloads
 mv-save-folder: AM-DL-MV downloads
 max-memory-limit: 256 # MB
 # wrapper-lite HTTP API endpoint (provides /m3u8 /key /lyrics /webplayback /license /status)
-# example: lite-server: "http://127.0.0.1:8080"
 lite-server: "http://127.0.0.1:8080"
 
 # set to 'true' to exit on error instead of requiring manual intervention. (for using this program in scripts)
