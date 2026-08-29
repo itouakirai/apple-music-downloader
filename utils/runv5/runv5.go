@@ -3,23 +3,13 @@ package runv5
 import (
 	"context"
 	"encoding/base64"
-	"encoding/binary"
 	"fmt"
 	"path/filepath"
-
-	"github.com/go-resty/resty/v2"
-	"google.golang.org/protobuf/proto"
-
-	cdm "main/utils/runv3/cdm"
-	key "main/utils/runv3/key"
+	"time"
 	"os"
-
 	"bytes"
 	"errors"
 	"io"
-
-	"github.com/itouakirai/mp4ff/mp4"
-
 	"encoding/json"
 	"net/http"
 	"net/url"
@@ -27,10 +17,15 @@ import (
 	"strings"
 	"sync"
 
+	cdm "main/utils/runv3/cdm"
+	key "main/utils/runv3/key"
+	"main/utils/httputil"
+
+	"github.com/go-resty/resty/v2"
+	"google.golang.org/protobuf/proto"
+	"github.com/itouakirai/mp4ff/mp4"
 	"github.com/grafov/m3u8"
 	"github.com/schollz/progressbar/v3"
-
-	"main/utils/httputil"
 )
 
 // PlaybackLicense 是 wrapper-lite /license 接口的响应结构。
@@ -195,75 +190,11 @@ func GetWebplayback(adamId string, liteServer string, mvmode bool) (string, stri
 	if mvmode {
 		return envelope.Data.M3u8, "", "", nil
 	}
-	// lite-server 返回的可能是 master 也可能是 media playlist，
-	// 先解析成 AAC media playlist，再像 runv3 一样提取 KID / uriPrefix。
-	mediaURL, err := resolveToMediaPlaylist(envelope.Data.M3u8)
-	if err != nil {
-		return "", "", "", err
-	}
-	kidBase64, fileurl, uriPrefix, err := extractKidBase64(mediaURL, false)
+	kidBase64, fileurl, uriPrefix, err := extractKidBase64(envelope.Data.M3u8, false)
 	if err != nil {
 		return "", "", "", err
 	}
 	return fileurl, kidBase64, uriPrefix, nil
-}
-
-// resolveToMediaPlaylist 下载 b；如果它是 master playlist，则挑选 AAC
-// (ctrp256 / mp4a.40.2) 变体并返回其绝对 URL；已经是 media playlist 时原样返回。
-func resolveToMediaPlaylist(b string) (string, error) {
-	body, err := getURLWithHeaders(b, "", "")
-	if err != nil {
-		return "", err
-	}
-	masterString := string(body)
-	from, listType, err := m3u8.DecodeFrom(strings.NewReader(masterString), true)
-	if err != nil {
-		return "", err
-	}
-	if listType != m3u8.MASTER {
-		return b, nil
-	}
-	masterPlaylist := from.(*m3u8.MasterPlaylist)
-	var preferred string
-	for _, variant := range masterPlaylist.Variants {
-		if variant == nil {
-			continue
-		}
-		uri := variant.URI
-		if strings.Contains(uri, "ctrp256") || strings.Contains(uri, "256_6") ||
-			strings.Contains(variant.Codecs, "mp4a.40.2") {
-			preferred = uri
-			break
-		}
-		if preferred == "" {
-			preferred = uri
-		}
-	}
-	if preferred == "" {
-		return "", errors.New("no AAC variant found in master playlist")
-	}
-	if strings.HasPrefix(preferred, "http") {
-		return preferred, nil
-	}
-	lastSlashIndex := strings.LastIndex(b, "/")
-	if lastSlashIndex == -1 {
-		return "", errors.New("cannot resolve relative variant URI")
-	}
-	return b[:lastSlashIndex+1] + preferred, nil
-}
-
-
-// parsePsshHeader 从标准 pssh box 中取出 WidevineCencHeader protobuf。
-func parsePsshHeader(box []byte) ([]byte, error) {
-	if len(box) < 32 || string(box[4:8]) != "pssh" {
-		return nil, errors.New("not a pssh box")
-	}
-	// box: size(4) type(4) version/flags(4) system id(16) data size(4) data
-	dataSize := binary.BigEndian.Uint32(box[28:32])
-	if 32+int(dataSize) > len(box) {
-		return nil, errors.New("invalid pssh box")
-	}
-	return box[32 : 32+int(dataSize)], nil
 }
 
 func ResolveStationVariantPlaylist(masterURL string, authtoken string, mutoken string) (string, error) {
@@ -468,162 +399,459 @@ func Run(adamId string, trackpath string, authtoken string, mvmode bool, liteSer
 	return "", nil
 }
 
-// Segment 结构体用于在 Channel 中传递分段数据
+
+
 type Segment struct {
 	Index int
 	Data  []byte
 }
 
-func downloadSegment(url string, index int, wg *sync.WaitGroup, segmentsChan chan<- Segment, client *http.Client, limiter chan struct{}) {
-	// 函数退出时，从 limiter 中接收一个值，释放一个并发槽位
-	defer func() {
-		<-limiter
-		wg.Done()
-	}()
-
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		fmt.Printf("错误(分段 %d): 创建请求失败: %v\n", index, err)
-		return
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		fmt.Printf("错误(分段 %d): 下载失败: %v\n", index, err)
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		fmt.Printf("错误(分段 %d): 服务器返回状态码 %d\n", index, resp.StatusCode)
-		return
-	}
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		fmt.Printf("错误(分段 %d): 读取数据失败: %v\n", index, err)
-		return
-	}
-
-	// 将下载好的分段（包含序号和数据）发送到 Channel
-	segmentsChan <- Segment{Index: index, Data: data}
+type DownloadConfig struct {
+	Concurrency int           // 最大并发下载数
+	MaxRetries  int           // 最大重试次数（不包含第一次）
+	RetryDelay  time.Duration // 初始重试等待时间
 }
 
-// fileWriter 从 Channel 接收分段并按顺序写入文件
-func fileWriter(wg *sync.WaitGroup, segmentsChan <-chan Segment, outputFile io.Writer, totalSegments int) {
+var defaultDownloadConfig = DownloadConfig{
+	Concurrency: 5,
+	MaxRetries:  3,
+	RetryDelay:  time.Second,
+}
+
+type segmentJob struct {
+	Index int
+	URL   string
+}
+
+// downloadSegment 下载一个分段。
+//
+// 下载失败时自动重试，采用指数退避：
+// 1s -> 2s -> 4s ...
+func downloadSegment(
+	ctx context.Context,
+	client *http.Client,
+	job segmentJob,
+	config DownloadConfig,
+) (Segment, error) {
+
+	var lastErr error
+
+	for attempt := 0; attempt <= config.MaxRetries; attempt++ {
+		if attempt > 0 {
+			delay := config.RetryDelay * time.Duration(1<<(attempt-1))
+
+			select {
+			case <-ctx.Done():
+				return Segment{}, ctx.Err()
+
+			case <-time.After(delay):
+			}
+		}
+
+		req, err := http.NewRequestWithContext(
+			ctx,
+			http.MethodGet,
+			job.URL,
+			nil,
+		)
+		if err != nil {
+			return Segment{}, fmt.Errorf(
+				"创建请求失败: %w",
+				err,
+			)
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("HTTP 请求失败: %w", err)
+			continue
+		}
+
+		// 不要 defer，因为这是循环。
+		// defer 会一直累积到函数返回。
+		if resp.StatusCode != http.StatusOK {
+			_ = resp.Body.Close()
+
+			// 对明确拒绝访问的错误，不盲目快速重试。
+			lastErr = fmt.Errorf(
+				"服务器返回 HTTP %d",
+				resp.StatusCode,
+			)
+
+			continue
+		}
+
+		data, err := io.ReadAll(resp.Body)
+		closeErr := resp.Body.Close()
+
+		if err != nil {
+			lastErr = fmt.Errorf(
+				"读取响应失败: %w",
+				err,
+			)
+			continue
+		}
+
+		if closeErr != nil {
+			lastErr = fmt.Errorf(
+				"关闭响应失败: %w",
+				closeErr,
+			)
+			continue
+		}
+
+		return Segment{
+			Index: job.Index,
+			Data:  data,
+		}, nil
+	}
+
+	return Segment{}, fmt.Errorf(
+		"分段 %d 下载失败，已重试 %d 次: %w",
+		job.Index,
+		config.MaxRetries,
+		lastErr,
+	)
+}
+
+// downloadWorker 从 jobs 中获取任务并下载。
+func downloadWorker(
+	ctx context.Context,
+	client *http.Client,
+	config DownloadConfig,
+	jobs <-chan segmentJob,
+	results chan<- Segment,
+	errCh chan<- error,
+	wg *sync.WaitGroup,
+) {
 	defer wg.Done()
 
-	// 缓冲区，用于存放乱序到达的分段
-	// key 是分段序号，value 是分段数据
-	segmentBuffer := make(map[int][]byte)
-	nextIndex := 0 // 期望写入的下一个分段的序号
+	for job := range jobs {
+		// 如果其他 Worker 已经发生致命错误，尽快退出。
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
 
-	for segment := range segmentsChan {
-		// 检查收到的分段是否是当前期望的
-		if segment.Index == nextIndex {
-			//fmt.Printf("写入分段 %d\n", segment.Index)
-			_, err := outputFile.Write(segment.Data)
-			if err != nil {
-				fmt.Printf("错误(分段 %d): 写入文件失败: %v\n", segment.Index, err)
+		segment, err := downloadSegment(
+			ctx,
+			client,
+			job,
+			config,
+		)
+
+		if err != nil {
+			select {
+			case errCh <- fmt.Errorf(
+				"分段 %d 下载失败: %w",
+				job.Index,
+				err,
+			):
+			default:
 			}
+			return
+		}
+
+		select {
+		case results <- segment:
+
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// fileWriter 保证按照 Index 顺序写入。
+//
+// 下载可以乱序完成，但文件必须严格顺序写入。
+func fileWriter(
+	segments <-chan Segment,
+	output io.Writer,
+	totalSegments int,
+	bar *progressbar.ProgressBar,
+) error {
+
+	// 已经下载完成但暂时不能写入的分段。
+	buffer := make(map[int][]byte)
+
+	nextIndex := 0
+
+	for segment := range segments {
+
+		// 如果收到了重复分段，忽略即可。
+		if segment.Index < nextIndex {
+			continue
+		}
+
+		// 当前正好是需要写入的分段。
+		if segment.Index == nextIndex {
+
+			if _, err := output.Write(segment.Data); err != nil {
+				return fmt.Errorf(
+					"写入分段 %d 失败: %w",
+					segment.Index,
+					err,
+				)
+			}
+
+			if bar != nil {
+				_ = bar.Add(len(segment.Data))
+			}
+
 			nextIndex++
 
-			// 检查缓冲区中是否有下一个连续的分段
+			// 连续检查 buffer 中是否存在下一个分段。
 			for {
-				data, ok := segmentBuffer[nextIndex]
+				data, ok := buffer[nextIndex]
 				if !ok {
-					break // 缓冲区里没有下一个，跳出循环，等待下一个分段到达
+					break
 				}
 
-				//fmt.Printf("从缓冲区写入分段 %d\n", nextIndex)
-				_, err := outputFile.Write(data)
-				if err != nil {
-					fmt.Printf("错误(分段 %d): 从缓冲区写入文件失败: %v\n", nextIndex, err)
+				if _, err := output.Write(data); err != nil {
+					return fmt.Errorf(
+						"写入缓存分段 %d 失败: %w",
+						nextIndex,
+						err,
+					)
 				}
-				// 从缓冲区删除已写入的分段，释放内存
-				delete(segmentBuffer, nextIndex)
+
+				if bar != nil {
+					_ = bar.Add(len(data))
+				}
+
+				// 写完立即释放内存。
+				delete(buffer, nextIndex)
+
 				nextIndex++
 			}
-		} else {
-			// 如果不是期望的分段，先存入缓冲区
-			//fmt.Printf("缓冲分段 %d (等待 %d)\n", segment.Index, nextIndex)
-			segmentBuffer[segment.Index] = segment.Data
+
+			continue
+		}
+
+		// 比当前需要的分段更靠后，暂时缓存。
+		buffer[segment.Index] = segment.Data
+	}
+
+	if nextIndex != totalSegments {
+		return fmt.Errorf(
+			"下载结束但分段不完整: 期望 %d 个，实际写入 %d 个",
+			totalSegments,
+			nextIndex,
+		)
+	}
+
+	return nil
+}
+
+// ExtMvData 下载、合并并解密。
+func ExtMvData(
+	keyAndUrls string,
+	savePath string,
+) error {
+
+	parts := strings.Split(keyAndUrls, ";")
+
+	if len(parts) < 2 {
+		return fmt.Errorf("无效的 keyAndUrls")
+	}
+
+	key := parts[0]
+	urls := parts[1:]
+
+	if key == "" {
+		return fmt.Errorf("解密 Key 不能为空")
+	}
+
+	if len(urls) == 0 {
+		return fmt.Errorf("没有下载地址")
+	}
+
+	// 创建临时加密文件。
+	tempFile, err := os.CreateTemp(
+		"",
+		"enc_mv_data-*.mp4",
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"创建临时文件失败: %w",
+			err,
+		)
+	}
+
+	tempFilePath := tempFile.Name()
+
+	defer func() {
+		_ = tempFile.Close()
+		_ = os.Remove(tempFilePath)
+	}()
+
+	config := defaultDownloadConfig
+
+	client := &http.Client{
+		Timeout: 60 * time.Second,
+	}
+
+	ctx, cancel := context.WithCancel(
+		context.Background(),
+	)
+	defer cancel()
+
+	// Worker Pool。
+	workerCount := config.Concurrency
+	if workerCount > len(urls) {
+		workerCount = len(urls)
+	}
+
+	jobs := make(chan segmentJob)
+
+	// 结果 Channel 不需要非常大。
+	//
+	// 小缓冲可以形成自然的背压，
+	// 防止大量分段堆积在内存中。
+	results := make(
+		chan Segment,
+		workerCount*2,
+	)
+
+	errCh := make(
+		chan error,
+		workerCount+1,
+	)
+
+	// 初始化进度条。
+	bar := progressbar.DefaultBytes(
+		-1,
+		"Downloading...",
+	)
+
+	// -----------------------------
+	// 启动 Writer
+	// -----------------------------
+
+	writerDone := make(chan error, 1)
+
+	go func() {
+		writerDone <- fileWriter(
+			results,
+			tempFile,
+			len(urls),
+			bar,
+		)
+	}()
+
+	// -----------------------------
+	// 启动 Worker Pool
+	// -----------------------------
+
+	var workerWg sync.WaitGroup
+
+	for i := 0; i < workerCount; i++ {
+		workerWg.Add(1)
+
+		go downloadWorker(
+			ctx,
+			client,
+			config,
+			jobs,
+			results,
+			errCh,
+			&workerWg,
+		)
+	}
+
+	// -----------------------------
+	// 投递下载任务
+	// -----------------------------
+
+	go func() {
+		defer close(jobs)
+
+		for index, url := range urls {
+
+			select {
+			case <-ctx.Done():
+				return
+
+			case jobs <- segmentJob{
+				Index: index,
+				URL:   url,
+			}:
+			}
+		}
+	}()
+
+	// 所有 Worker 退出后关闭结果 Channel。
+	go func() {
+		workerWg.Wait()
+		close(results)
+	}()
+
+	// -----------------------------
+	// 等待完成或错误
+	// -----------------------------
+
+	select {
+
+	case err := <-errCh:
+		// 某个分段最终失败。
+		cancel()
+
+		// 等待 Writer 正常退出。
+		<-writerDone
+
+		return err
+
+	case err := <-writerDone:
+		if err != nil {
+			cancel()
+			return err
 		}
 	}
 
-	// 确保所有分段都已写入
-	if nextIndex != totalSegments {
-		fmt.Printf("警告: 写入完成，但似乎有分段丢失。期望 %d 个, 实际写入 %d 个。\n", totalSegments, nextIndex)
-	}
-}
-
-func ExtMvData(keyAndUrls string, savePath string) error {
-	segments := strings.Split(keyAndUrls, ";")
-	key := segments[0]
-	//fmt.Println(key)
-	urls := segments[1:]
-	tempFile, err := os.CreateTemp("", "enc_mv_data-*.mp4")
-	if err != nil {
-		fmt.Printf("创建文件失败：%v\n", err)
-		return err
-	}
-	defer os.Remove(tempFile.Name())
-	defer tempFile.Close()
-
-	var downloadWg, writerWg sync.WaitGroup
-	segmentsChan := make(chan Segment, len(urls))
-	// --- 新增代码: 定义最大并发数 ---
-	const maxConcurrency = 10
-	// --- 新增代码: 创建带缓冲的 Channel 作为信号量 ---
-	limiter := make(chan struct{}, maxConcurrency)
-	client := &http.Client{}
-
-	// 初始化进度条
-	bar := progressbar.DefaultBytes(-1, "Downloading...")
-	barWriter := io.MultiWriter(tempFile, bar)
-
-	// 启动写入 Goroutine
-	writerWg.Add(1)
-	go fileWriter(&writerWg, segmentsChan, barWriter, len(urls))
-
-	// 启动下载 Goroutines
-	for i, url := range urls {
-		// 在启动 Goroutine 前，向 limiter 发送一个值来“获取”一个槽位
-		// 如果 limiter 已满 (达到10个)，这里会阻塞，直到有其他任务完成并释放槽位
-		//fmt.Printf("请求启动任务 %d...\n", i)
-		limiter <- struct{}{}
-		//fmt.Printf("...任务 %d 已启动\n", i)
-
-		downloadWg.Add(1)
-		// 将 limiter 传递给下载函数
-		go downloadSegment(url, i, &downloadWg, segmentsChan, client, limiter)
-	}
-
-	// 等待所有下载任务完成
-	downloadWg.Wait()
-	// 下载完成后，关闭 Channel。写入 Goroutine 会在处理完 Channel 中所有数据后退出。
-	close(segmentsChan)
-
-	// 等待写入 Goroutine 完成所有写入和缓冲处理
-	writerWg.Wait()
-
-	// 显式关闭文件（defer会再次调用，但重复关闭是安全的）
+	// 关闭临时文件，确保数据全部写入。
 	if err := tempFile.Close(); err != nil {
-		fmt.Printf("关闭临时文件失败: %v\n", err)
-		return err
+		return fmt.Errorf(
+			"关闭临时文件失败: %w",
+			err,
+		)
 	}
+
 	fmt.Println("\nDownloaded.")
 
-	cmd1 := exec.Command("mp4decrypt", "--key", key, tempFile.Name(), filepath.Base(savePath))
-	cmd1.Dir = filepath.Dir(savePath) //设置mp4decrypt的工作目录以解决中文路径错误
-	outlog, err := cmd1.CombinedOutput()
-	if err != nil {
-		fmt.Printf("Decrypt failed: %v\n", err)
-		fmt.Printf("Output:\n%s\n", outlog)
-		return err
-	} else {
-		fmt.Println("Decrypted.")
+	// 确保输出目录存在。
+	if err := os.MkdirAll(
+		filepath.Dir(savePath),
+		0755,
+	); err != nil {
+		return fmt.Errorf(
+			"创建输出目录失败: %w",
+			err,
+		)
 	}
+
+	// 解密。
+	cmd := exec.Command(
+		"mp4decrypt",
+		"--key",
+		key,
+		tempFilePath,
+		filepath.Base(savePath),
+	)
+
+	cmd.Dir = filepath.Dir(savePath)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf(
+			"Decrypt failed: %w\n%s",
+			err,
+			string(output),
+		)
+	}
+
+	fmt.Println("Decrypted.")
+
 	return nil
 }
 

@@ -260,11 +260,11 @@ func extractMvAudio(c string) (string, error) {
 
 	audio := from.(*m3u8.MasterPlaylist)
 
-	var audioPriority = []string{"audio-atmos", "audio-ac3", "audio-stereo-256"}
+	var audioPriority = []string{"audio-atmos", "audio-ac3", "audio-stereo-256", "audio-stereo-128", "audio-stereo-64"}
 	if Config.MVAudioType == "ac3" {
-		audioPriority = []string{"audio-ac3", "audio-stereo-256"}
+		audioPriority = []string{"audio-ac3", "audio-stereo-256", "audio-stereo-128", "audio-stereo-64"}
 	} else if Config.MVAudioType == "aac" {
-		audioPriority = []string{"audio-stereo-256"}
+		audioPriority = []string{"audio-stereo-256", "audio-stereo-128", "audio-stereo-64"}
 	}
 
 	re := regexp.MustCompile(`_gr(\d+)_`)
