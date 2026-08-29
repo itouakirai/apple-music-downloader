@@ -27,10 +27,10 @@ func Main() {
 	if liteServerFlag != "" {
 		Config.LiteServer = liteServerFlag
 	}
-	if storefront, err := getLiteStorefront(); err != nil {
+	if regions, err := getLiteRegions(); err != nil {
 		fmt.Println("Warning: failed to query lite-server /status:", err)
 	} else {
-		fmt.Printf("lite-server storefront: %s\n", storefront)
+		fmt.Printf("lite-server regions: %s\n", regions)
 	}
 	if err := httputil.Init(Config.Proxy); err != nil {
 		fmt.Printf("proxy config error: %v\n", err)

@@ -23,36 +23,36 @@ func topLevelKeys(data []byte) map[string]bool {
 	return keys
 }
 
-// getLiteStorefront queries wrapper-lite's /status endpoint once and returns
-// the storefront reported by the service.
+// getLiteRegions queries wrapper-lite's /status endpoint once and returns
+// the regions reported by the service.
 
-func getLiteStorefront() (string, error) {
+func getLiteRegions() ([]string, error) {
 	if Config.LiteServer == "" {
-		return "", errors.New("lite-server is not configured")
+		return nil, errors.New("lite-server is not configured")
 	}
 	endpoint := strings.TrimRight(Config.LiteServer, "/") + "/status"
 	resp, err := http.Get(endpoint)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", errors.New(resp.Status)
+		return nil, errors.New(resp.Status)
 	}
 	var envelope struct {
 		Code int    `json:"code"`
 		Msg  string `json:"msg"`
 		Data struct {
-			Storefront string `json:"storefront"`
+			Regions []string `json:"regions"`
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
-		return "", err
+		return nil, err
 	}
 	if envelope.Code != 0 {
-		return "", fmt.Errorf("lite-server /status returned code=%d msg=%s", envelope.Code, envelope.Msg)
+		return nil, fmt.Errorf("lite-server /status returned code=%d msg=%s", envelope.Code, envelope.Msg)
 	}
-	return envelope.Data.Storefront, nil
+	return envelope.Data.Regions, nil
 }
 
 // flagValueFromArgs scans raw os.Args for "--name=value" or "--name value"
