@@ -20,7 +20,7 @@ aac-save-folder: AM-DL-AAC downloads
 mv-save-folder: AM-DL-MV downloads
 max-memory-limit: 256 # MB
 # wrapper-lite HTTP API endpoint (provides /m3u8 /key /lyrics /webplayback /license /status)
-lite-server: "http://127.0.0.1:8080"
+ lite-server: "http://127.0.0.1:12340"
 
 # set to 'true' to exit on error instead of requiring manual intervention. (for using this program in scripts)
 exit-on-error: false

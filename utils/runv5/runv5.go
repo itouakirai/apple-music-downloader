@@ -153,7 +153,7 @@ func getURLWithHeaders(url string, authtoken string, mutoken string) ([]byte, er
 
 // GetWebplayback 与 runv3 同名同返回值，但不再请求 Apple webPlayback，
 // 改为请求 wrapper-lite 的 /webplayback 接口，因此不需要 media-user-token。
-// liteServer 为 lite-server 地址，如 "http://127.0.0.1:8080"。
+ // liteServer 为 lite-server 地址，如 "http://127.0.0.1:12340"。
 func GetWebplayback(adamId string, liteServer string, mvmode bool) (string, string, string, error) {
 	if liteServer == "" {
 		return "", "", "", errors.New("lite-server is not configured")
@@ -323,7 +323,7 @@ func extsong(b string) bytes.Buffer {
 }
 
 // Run 与 runv3.Run 签名一致，调用方可以无缝切换。authtoken / mutoken 不再使用，
-// liteServerUrl 为 wrapper-lite 地址（如 "http://127.0.0.1:8080"），
+ // liteServerUrl 为 wrapper-lite 地址（如 "http://127.0.0.1:12340"），
 // license 会发到 liteServerUrl + "/license"，webplayback 走 liteServerUrl + "/webplayback"。
 func Run(adamId string, trackpath string, authtoken string, mvmode bool, liteServerUrl string) (string, error) {
 	if liteServerUrl == "" {

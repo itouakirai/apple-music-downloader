@@ -11,7 +11,7 @@
 **Must be installed first:**
 
 - **[MP4Box](https://gpac.io/downloads/gpac-nightly-builds/)** - Ensure it's correctly added to your environment variables
-- **[wrapper-lite](https://github.com/WorldObservationLog/wrapper/tree/lite)** - Decryption program must be running before use. Point `lite-server` in `config.yaml` to its HTTP API (e.g. `http://127.0.0.1:8080`)
+ - **[wrapper-lite](https://github.com/WorldObservationLog/wrapper/tree/lite)** - Decryption program must be running before use. Point `lite-server` in `config.yaml` to its HTTP API (e.g. `http://127.0.0.1:12340`)
 
 **Optional (for MV download):**
 
