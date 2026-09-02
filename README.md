@@ -13,10 +13,6 @@
 - **[MP4Box](https://gpac.io/downloads/gpac-nightly-builds/)** - Ensure it's correctly added to your environment variables
  - **[wrapper-lite](https://github.com/WorldObservationLog/wrapper/tree/lite)** - Decryption program must be running before use. Point `lite-server` in `config.yaml` to its HTTP API (e.g. `http://127.0.0.1:12340`)
 
-**Optional (for MV download):**
-
-- **[mp4decrypt](https://www.bento4.com/downloads/)**
-
 ---
 
 ## ✨ Features
@@ -28,7 +24,7 @@
    go run main.go https://music.apple.com/us/artist/taylor-swift/159260351 --all-album
    ```
 4. **Stream Decryption** - Uses Sendy McSenderson's code for download-and-decrypt streaming, solving memory issues with large files
-5. **MV Download** - Requires mp4decrypt installation
+5. **MV Download** - Uses in-process mp4ff decryption, no external tools required
 6. **Interactive Search** - Arrow-key navigation for search results
    ```bash
    go run main.go --search [song/album/artist] "search_term"
@@ -141,8 +137,6 @@ docker run --network host -v ./downloads:/downloads -v ./config.yaml:/app/config
    ```bash
    go run main.go --debug https://music.apple.com/us/album/1989-taylors-version-deluxe/1713845538
    ```
-
-📖 [Chinese Tutorial (Method 3)](https://telegra.ph/Apple-Music-Alac%E9%AB%98%E8%A7%A3%E6%9E%90%E5%BA%A6%E6%97%A0%E6%8D%9F%E9%9F%B3%E4%B9%90%E4%B8%8B%E8%BD%BD%E6%95%99%E7%A8%8B-04-02-2)
 
 ---
 

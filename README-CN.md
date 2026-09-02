@@ -13,10 +13,6 @@
 - **[MP4Box](https://gpac.io/downloads/gpac-nightly-builds/)** - 确保已正确添加到环境变量
 - **[wrapper-lite](https://github.com/WorldObservationLog/wrapper/tree/lite)** - 解密程序必须在使用前运行，并在 `config.yaml` 中将 `lite-server` 指向其 HTTP 接口（例如 `http://127.0.0.1:8080`）
 
-**可选（用于 MV 下载）：**
-
-- **[mp4decrypt](https://www.bento4.com/downloads/)**
-
 ---
 
 ## ✨ 功能特性
@@ -28,7 +24,7 @@
    go run main.go https://music.apple.com/us/artist/taylor-swift/159260351 --all-album
    ```
 4. **流式解密** - 使用 Sendy McSenderson 的代码实现边下载边解密，解决大文件解密时内存不足问题
-5. **MV 下载** - 需要安装 mp4decrypt
+5. **MV 下载** - 使用进程内 mp4ff 解密，无需外部工具
 6. **交互式搜索** - 支持方向键导航搜索结果
    ```bash
    go run main.go --search [song/album/artist] "search_term"
@@ -141,8 +137,6 @@ docker run --network host -v ./downloads:/downloads -v ./config.yaml:/app/config
    ```bash
    go run main.go --debug https://music.apple.com/us/album/1989-taylors-version-deluxe/1713845538
    ```
-
-📖 [中文教程 - 详见方法三](https://telegra.ph/Apple-Music-Alac%E9%AB%98%E8%A7%A3%E6%9E%90%E5%BA%A6%E6%97%A0%E6%8D%9F%E9%9F%B3%E4%B9%90%E4%B8%8B%E8%BD%BD%E6%95%99%E7%A8%8B-04-02-2)
 
 ---
 

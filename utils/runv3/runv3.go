@@ -571,7 +571,7 @@ func ExtMvData(keyAndUrls string, savePath string) error {
 		return err
 	}
 
-	// 复用 mp4ff 进程内解密，替代外部 mp4decrypt。
+	// 复用 mp4ff 进程内解密。
 	inFile, err := os.Open(tempFile.Name())
 	if err != nil {
 		fmt.Printf("打开临时文件失败: %v\n", err)

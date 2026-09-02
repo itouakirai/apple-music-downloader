@@ -840,7 +840,7 @@ func ExtMvData(
 		return fmt.Errorf("解析解密 Key 失败: %w", err)
 	}
 
-	// 复用与音乐相同的 mp4ff 进程内解密，替代外部 mp4decrypt。
+	// 复用与音乐相同的 mp4ff 进程内解密。
 	inFile, err := os.Open(tempFilePath)
 	if err != nil {
 		return fmt.Errorf("打开临时文件失败: %w", err)
