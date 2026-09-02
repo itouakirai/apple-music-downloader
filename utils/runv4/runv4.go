@@ -207,6 +207,7 @@ func downloadAndDecryptFile(liteServer string, in io.Reader, outfile string,
 	var outBuf *bufio.Writer
 	var outFile *os.File
 	var tmpPath string
+	var err error
 	MaxMemorySize := int64(Config.MaxMemoryLimit * 1024 * 1024)
 	inBuf := bufio.NewReader(in)
 
