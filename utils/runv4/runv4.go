@@ -65,6 +65,9 @@ func fetchTemplate(baseURL, adam, uri string) (*temarimod.Temari, error) {
 	if lib == nil {
 		return nil, errors.New("runv4: temari library not initialized (call runv4.Init)")
 	}
+	if adam == "0" && uri == prefetchKey {
+		return lib.FromJSON([]byte(prefetchTemplateJSON))
+	}
 	endpoint := strings.TrimRight(baseURL, "/") + "/key?adamId=" + url.QueryEscape(adam) + "&uri=" + url.QueryEscape(uri)
 	client := http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Get(endpoint)
@@ -112,9 +115,9 @@ func (b *streamBody) Read(p []byte) (int, error) {
 const downloadIdleTimeout = 30 * time.Second
 
 type decryptJob struct {
-	Seq       int               // ��Ƭ��ţ���������
-	Frag      *mp4.Fragment     // ԭʼ��Ƭ
-	Tmpl      *temarimod.Temari // ��Կģ��
+	Seq       int               // fragment sequence number, used for ordering
+	Frag      *mp4.Fragment     // original fragment
+	Tmpl      *temarimod.Temari // key template
 	RawOffset int64
 }
 
@@ -124,8 +127,8 @@ type decryptResult struct {
 	RawOffset int64
 }
 
-// Run ���ط�Ƭ MP4 �����±߽⣺HTTP body ֱ������
-// ���� fragment-reader -> decrypt-workers -> in-order-writer ��ˮ�ߡ�
+// Run streams fragmented MP4 and decrypts on the fly: HTTP body is fed directly
+// through a fragment-reader -> decrypt-workers -> in-order-writer pipeline.
 func Run(adamId string, playlistUrl string, outfile string, Config structs.ConfigSet) error {
 	if lib == nil {
 		return errors.New("runv4: temari library not initialized (call runv4.Init)")
