@@ -27,11 +27,6 @@ func ripTrack(track *task.Track, token string, mediaUserToken string) {
 			counter.Success++
 			return
 		}
-		if _, err := exec.LookPath("mp4decrypt"); err != nil {
-			fmt.Println("mp4decrypt is not found, skip MV dl")
-			counter.Success++
-			return
-		}
 		err := mvDownloader(track.ID, track.SaveDir, token, track.Storefront, track)
 		if err != nil {
 			fmt.Println("\u26A0 Failed to dl MV:", err)

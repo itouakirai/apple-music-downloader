@@ -11,7 +11,6 @@ import (
 	"main/utils/structs"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -145,11 +144,6 @@ func Main() {
 				counter.Total++
 				if Config.LiteServer == "" {
 					fmt.Println(": lite-server is not set, skip MV dl")
-					counter.Success++
-					continue
-				}
-				if _, err := exec.LookPath("mp4decrypt"); err != nil {
-					fmt.Println(": mp4decrypt is not found, skip MV dl")
 					counter.Success++
 					continue
 				}

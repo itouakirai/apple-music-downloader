@@ -3,6 +3,7 @@ package runv5
 import (
 	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"path/filepath"
 	"time"
@@ -13,7 +14,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
-	"os/exec"
 	"strings"
 	"sync"
 
@@ -830,28 +830,34 @@ func ExtMvData(
 		)
 	}
 
-	// 解密。
-	cmd := exec.Command(
-		"mp4decrypt",
-		"--key",
-		key,
-		tempFilePath,
-		filepath.Base(savePath),
-	)
-
-	cmd.Dir = filepath.Dir(savePath)
-
-	output, err := cmd.CombinedOutput()
+	// 解析 16 字节解密 key（keyAndUrls 中格式为 "1:hexkey"）。
+	keyHex := key
+	if i := strings.Index(keyHex, ":"); i >= 0 {
+		keyHex = keyHex[i+1:]
+	}
+	keyBytes, err := hex.DecodeString(keyHex)
 	if err != nil {
-		return fmt.Errorf(
-			"Decrypt failed: %w\n%s",
-			err,
-			string(output),
-		)
+		return fmt.Errorf("解析解密 Key 失败: %w", err)
+	}
+
+	// 复用与音乐相同的 mp4ff 进程内解密，替代外部 mp4decrypt。
+	inFile, err := os.Open(tempFilePath)
+	if err != nil {
+		return fmt.Errorf("打开临时文件失败: %w", err)
+	}
+	defer inFile.Close()
+
+	outFile, err := os.Create(savePath)
+	if err != nil {
+		return fmt.Errorf("创建输出文件失败: %w", err)
+	}
+	defer outFile.Close()
+
+	if err := DecryptMP4(inFile, keyBytes, outFile); err != nil {
+		return fmt.Errorf("Decrypt failed: %w", err)
 	}
 
 	fmt.Println("Decrypted.")
-
 	return nil
 }
 

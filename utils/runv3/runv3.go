@@ -3,8 +3,8 @@ package runv3
 import (
 	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
-	"path/filepath"
 
 	"github.com/go-resty/resty/v2"
 	"google.golang.org/protobuf/proto"
@@ -21,7 +21,6 @@ import (
 
 	"encoding/json"
 	"net/http"
-	"os/exec"
 	"strings"
 	"sync"
 
@@ -561,16 +560,38 @@ func ExtMvData(keyAndUrls string, savePath string) error {
 	}
 	fmt.Println("\nDownloaded.")
 
-	cmd1 := exec.Command("mp4decrypt", "--key", key, tempFile.Name(), filepath.Base(savePath))
-	cmd1.Dir = filepath.Dir(savePath) //设置mp4decrypt的工作目录以解决中文路径错误
-	outlog, err := cmd1.CombinedOutput()
-	if err != nil {
-		fmt.Printf("Decrypt failed: %v\n", err)
-		fmt.Printf("Output:\n%s\n", outlog)
-		return err
-	} else {
-		fmt.Println("Decrypted.")
+	// 解析 16 字节解密 key（keyAndUrls 中格式为 "1:hexkey"）。
+	keyHex := key
+	if i := strings.Index(keyHex, ":"); i >= 0 {
+		keyHex = keyHex[i+1:]
 	}
+	keyBytes, err := hex.DecodeString(keyHex)
+	if err != nil {
+		fmt.Printf("解析解密 Key 失败: %v\n", err)
+		return err
+	}
+
+	// 复用 mp4ff 进程内解密，替代外部 mp4decrypt。
+	inFile, err := os.Open(tempFile.Name())
+	if err != nil {
+		fmt.Printf("打开临时文件失败: %v\n", err)
+		return err
+	}
+	defer inFile.Close()
+
+	outFile, err := os.Create(savePath)
+	if err != nil {
+		fmt.Printf("创建输出文件失败: %v\n", err)
+		return err
+	}
+	defer outFile.Close()
+
+	if err := DecryptMP4(inFile, keyBytes, outFile); err != nil {
+		fmt.Printf("Decrypt failed: %v\n", err)
+		return err
+	}
+
+	fmt.Println("Decrypted.")
 	return nil
 }
 
