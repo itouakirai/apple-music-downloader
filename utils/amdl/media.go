@@ -232,7 +232,7 @@ func writeMP4Tags(track *task.Track, lrc string) error {
 }
 
 func extractMvAudio(c string) (string, error) {
-	MediaUrl, err := url.Parse(c)
+	mediaURL, err := url.Parse(c)
 	if err != nil {
 		return "", err
 	}
@@ -252,61 +252,96 @@ func extractMvAudio(c string) (string, error) {
 		return "", err
 	}
 
-	audioString := string(body)
-	from, listType, err := m3u8.DecodeFrom(strings.NewReader(audioString), true)
+	from, listType, err := m3u8.DecodeFrom(strings.NewReader(string(body)), true)
 	if err != nil || listType != m3u8.MASTER {
 		return "", errors.New("m3u8 not of media type")
 	}
 
-	audio := from.(*m3u8.MasterPlaylist)
+	master := from.(*m3u8.MasterPlaylist)
 
-	var audioPriority = []string{"audio-atmos", "audio-ac3", "audio-stereo-256", "audio-stereo-128", "audio-stereo-64"}
-	if Config.MVAudioType == "ac3" {
-		audioPriority = []string{"audio-ac3", "audio-stereo-256", "audio-stereo-128", "audio-stereo-64"}
-	} else if Config.MVAudioType == "aac" {
-		audioPriority = []string{"audio-stereo-256", "audio-stereo-128", "audio-stereo-64"}
+	type audioStream struct {
+		url     string
+		groupID string
+		score   int
+		rank    int
 	}
+	var streams []audioStream
+	rankRe := regexp.MustCompile(`_gr(\d+)_`)
 
-	re := regexp.MustCompile(`_gr(\d+)_`)
-
-	type AudioStream struct {
-		URL     string
-		Rank    int
-		GroupID string
-	}
-	var audioStreams []AudioStream
-
-	for _, variant := range audio.Variants {
-		for _, audiov := range variant.Alternatives {
-			if audiov.URI != "" {
-				for _, priority := range audioPriority {
-					if audiov.GroupId == priority {
-						matches := re.FindStringSubmatch(audiov.URI)
-						if len(matches) == 2 {
-							var rank int
-							fmt.Sscanf(matches[1], "%d", &rank)
-							streamUrl, _ := MediaUrl.Parse(audiov.URI)
-							audioStreams = append(audioStreams, AudioStream{
-								URL:     streamUrl.String(),
-								Rank:    rank,
-								GroupID: audiov.GroupId,
-							})
-						}
-					}
-				}
+	for _, variant := range master.Variants {
+		for _, alt := range variant.Alternatives {
+			if alt.URI == "" {
+				continue
 			}
+			score := audioScore(alt.GroupId, Config.MVAudioType)
+			if score < 0 {
+				continue
+			}
+			var rank int
+			if m := rankRe.FindStringSubmatch(alt.URI); len(m) == 2 {
+				rank, _ = strconv.Atoi(m[1])
+			}
+			streamURL, _ := mediaURL.Parse(alt.URI)
+			streams = append(streams, audioStream{
+				url:     streamURL.String(),
+				groupID: alt.GroupId,
+				score:   score,
+				rank:    rank,
+			})
 		}
 	}
 
-	if len(audioStreams) == 0 {
+	if len(streams) == 0 {
 		return "", errors.New("no suitable audio stream found")
 	}
 
-	sort.Slice(audioStreams, func(i, j int) bool {
-		return audioStreams[i].Rank > audioStreams[j].Rank
+	sort.Slice(streams, func(i, j int) bool {
+		if streams[i].score != streams[j].score {
+			return streams[i].score > streams[j].score
+		}
+		return streams[i].rank > streams[j].rank
 	})
-	fmt.Println("Audio: " + audioStreams[0].GroupID)
-	return audioStreams[0].URL, nil
+	fmt.Println("Audio: " + streams[0].groupID)
+	return streams[0].url, nil
+}
+
+// audioScore rates an audio group ID by quality. Higher is better; -1 means
+// the format is not allowed for the selected mv-audio-type.
+func audioScore(groupID, preferredType string) int {
+	switch {
+	case groupID == "audio-atmos":
+		if preferredType == "ac3" || preferredType == "aac" {
+			return -1
+		}
+		return 10000
+	case groupID == "audio-ac3":
+		if preferredType == "aac" {
+			return -1
+		}
+		if preferredType == "ac3" {
+			return 10000
+		}
+		return 9000
+	case strings.HasPrefix(groupID, "audio-stereo-"):
+		// LC-AAC stereo, e.g. audio-stereo-256.
+		return 8000 + parseAudioBitrate(groupID, "audio-stereo-")
+	case strings.HasPrefix(groupID, "audio-HE-stereo-"):
+		// HE-AAC stereo, e.g. audio-HE-stereo-64.
+		return 7000 + parseAudioBitrate(groupID, "audio-HE-stereo-")
+	case strings.HasPrefix(groupID, "audio-HE2-stereo-"):
+		// HE-AAC v2 stereo, e.g. audio-HE2-stereo-32.
+		return 6000 + parseAudioBitrate(groupID, "audio-HE2-stereo-")
+	default:
+		return -1
+	}
+}
+
+func parseAudioBitrate(groupID, prefix string) int {
+	bitrate, err := strconv.Atoi(strings.TrimPrefix(groupID, prefix))
+	if err != nil {
+		return 0
+	}
+	return bitrate
 }
 
 func checkM3u8(b string, f string) (string, error) {
