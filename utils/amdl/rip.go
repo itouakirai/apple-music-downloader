@@ -751,14 +751,11 @@ func ripAlbum(albumId string, token string, storefront string, mediaUserToken st
 		arr[i] = i + 1
 	}
 
-	if dl_song {
-		if urlArg_i == "" {
-		} else {
-			for i := range album.Tracks {
-				if urlArg_i == album.Tracks[i].ID {
-					ripTrack(&album.Tracks[i], token, mediaUserToken)
-					return nil
-				}
+	if urlArg_i != "" {
+		for i := range album.Tracks {
+			if urlArg_i == album.Tracks[i].ID {
+				ripTrack(&album.Tracks[i], token, mediaUserToken)
+				return nil
 			}
 		}
 		return nil
@@ -1049,7 +1046,6 @@ func ripSong(songId string, token string, storefront string, mediaUserToken stri
 	albumId := songData.Relationships.Albums.Data[0].ID
 
 	// Use album approach but only download the specific song
-	dl_song = true
 	err = ripAlbum(albumId, token, storefront, mediaUserToken, songId)
 	if err != nil {
 		fmt.Println("Failed to rip song:", err)

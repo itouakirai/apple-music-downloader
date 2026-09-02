@@ -68,7 +68,7 @@ docker run --network host -v ./downloads:/downloads ghcr.io/zhaarey/apple-music-
 docker run --network host -v ./downloads:/downloads ghcr.io/zhaarey/apple-music-downloader https://music.apple.com/ru/album/children-of-forever/1443732441
 
 # Download single song
-docker run --network host -v ./downloads:/downloads ghcr.io/zhaarey/apple-music-downloader --song https://music.apple.com/ru/album/bass-folk-song/1443732441?i=1443732453
+docker run --network host -v ./downloads:/downloads ghcr.io/zhaarey/apple-music-downloader https://music.apple.com/ru/album/bass-folk-song/1443732441?i=1443732453
 
 # Interactive selection
 docker run -it --network host -v ./downloads:/downloads ghcr.io/zhaarey/apple-music-downloader --select https://music.apple.com/ru/album/children-of-forever/1443732441
@@ -109,7 +109,7 @@ docker run --network host -v ./downloads:/downloads -v ./config.yaml:/app/config
 
 3. **Download single song:**
    ```bash
-   go run main.go --song https://music.apple.com/us/album/never-gonna-give-you-up-2022-remaster/1624945511?i=1624945512
+   go run main.go https://music.apple.com/us/album/never-gonna-give-you-up-2022-remaster/1624945511?i=1624945512
    # or
    go run main.go https://music.apple.com/us/song/you-move-me-2022-remaster/1624945520
    ```

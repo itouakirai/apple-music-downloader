@@ -11,7 +11,6 @@ var (
 	dl_atmos           bool
 	dl_aac             bool
 	dl_select          bool
-	dl_song            bool
 	artist_select      bool
 	debug_mode         bool
 	print_json         bool

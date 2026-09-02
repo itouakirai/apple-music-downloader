@@ -193,11 +193,6 @@ func handleSearch(searchType string, queryParts []string, token string) (string,
 
 		selectedItem := items[itemIndex]
 
-		// Automatically set single song download flag
-		if selectedItem.Type == "Song" {
-			dl_song = true
-		}
-
 		quality, err := promptForQuality(selectedItem, token)
 		if err != nil {
 			return "", fmt.Errorf("could not process quality selection: %w", err)
