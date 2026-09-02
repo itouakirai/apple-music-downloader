@@ -205,6 +205,8 @@ func downloadAndDecryptFile(liteServer string, in io.Reader, outfile string,
 	adamId string, playlistSegments []*m3u8.MediaSegment, totalLen int64, Config structs.ConfigSet) error {
 	var buffer bytes.Buffer
 	var outBuf *bufio.Writer
+	var outFile *os.File
+	var tmpPath string
 	MaxMemorySize := int64(Config.MaxMemoryLimit * 1024 * 1024)
 	inBuf := bufio.NewReader(in)
 
@@ -218,13 +220,21 @@ func downloadAndDecryptFile(liteServer string, in io.Reader, outfile string,
 	if totalLen <= MaxMemorySize {
 		outBuf = bufio.NewWriter(&buffer)
 	} else {
-		ofh, err := os.Create(outfile)
+		// Stream to a temp file first and rename into place on success, so a
+		// failed download never leaves a truncated track at the final path.
+		tmpPath = outfile + ".part"
+		outFile, err = os.Create(tmpPath)
 		if err != nil {
 			return err
 		}
-		defer ofh.Close()
-		outBuf = bufio.NewWriter(ofh)
+		outBuf = bufio.NewWriter(outFile)
 	}
+	defer func() {
+		if outFile != nil {
+			outFile.Close()
+			os.Remove(tmpPath)
+		}
+	}()
 	init, offset, err := ReadInitSegment(inBuf)
 	if err != nil {
 		return err
@@ -408,6 +418,17 @@ func downloadAndDecryptFile(liteServer string, in io.Reader, outfile string,
 		if err != nil {
 			return err
 		}
+	} else {
+		// Commit: close the temp file and atomically move it to the final name.
+		if err := outFile.Close(); err != nil {
+			return err
+		}
+		if err := os.Rename(tmpPath, outfile); err != nil {
+			os.Remove(tmpPath)
+			return err
+		}
+		outFile = nil
+		tmpPath = ""
 	}
 	return nil
 }
