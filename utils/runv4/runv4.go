@@ -25,7 +25,9 @@ const prefetchKey = "skd://itunes.apple.com/P000000000/s1/e1"
 
 var ErrTimeout = errors.New("response timed out")
 
-type TimedResponseBody struct {
+// streamBody resets an idle timer on every read; when no bytes arrive within
+// timeout the request context is cancelled (download stall detection).
+type streamBody struct {
 	timeout   time.Duration
 	timer     *time.Timer
 	threshold int
@@ -45,107 +47,25 @@ type decryptResult struct {
 	RawOffset int64
 }
 
-func (b *TimedResponseBody) Read(p []byte) (int, error) {
+func (b *streamBody) Read(p []byte) (int, error) {
 	n, err := b.body.Read(p)
 	if err != nil {
 		return n, err
 	}
-	// fmt.Printf("Read %d bytes, buffer size %d bytes", n, len(p))
 	if n >= b.threshold {
 		b.timer.Reset(b.timeout)
 	}
 	return n, err
 }
 
-const (
-	downloadMaxAttempts = 5                // 最多尝试次数
-	downloadIdleTimeout = 30 * time.Second // 30 秒没收到任何字节就认为卡死
-)
+const downloadIdleTimeout = 30 * time.Second
 
-// downloadWithResume 下载完整文件到内存，支持断点续传、空闲超时和重试。
-// 只有拿到 totalLen 字节才返回成功。
-func downloadWithResume(ctx context.Context, client *http.Client, fileUrl string,
-	header http.Header, totalLen int64, bar *progressbar.ProgressBar) (*bytes.Buffer, error) {
-
-	buf := &bytes.Buffer{}
-	var offset int64
-	backoff := 2 * time.Second
-
-	for attempt := 1; attempt <= downloadMaxAttempts; attempt++ {
-		if attempt > 1 {
-			fmt.Printf("Download interrupted at %d/%d bytes, retrying in %v\n", offset, totalLen, backoff)
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(backoff):
-			}
-			if backoff < 30*time.Second {
-				backoff *= 2
-			}
-		}
-
-		// 每次尝试用独立的子 context，卡死时只取消本次连接
-		attemptCtx, attemptCancel := context.WithCancel(ctx)
-		req, err := http.NewRequestWithContext(attemptCtx, "GET", fileUrl, nil)
-		if err != nil {
-			attemptCancel()
-			return nil, err
-		}
-		req.Header = header
-		if offset > 0 {
-			req.Header.Set("Range", fmt.Sprintf("bytes=%d-", offset)) // 断点续传
-		}
-
-		resp, err := client.Do(req)
-		if err != nil {
-			attemptCancel()
-			continue
-		}
-		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
-			resp.Body.Close()
-			attemptCancel()
-			return nil, fmt.Errorf("download failed: server returned %s", resp.Status)
-		}
-		if offset > 0 && resp.StatusCode != http.StatusPartialContent {
-			resp.Body.Close()
-			attemptCancel()
-			return nil, errors.New("server does not support Range requests, cannot resume")
-		}
-
-		// 空闲超时检测：没有新数据到达就取消本次请求，触发重试
-		timer := time.AfterFunc(downloadIdleTimeout, attemptCancel)
-		body := &TimedResponseBody{
-			timeout:   downloadIdleTimeout,
-			timer:     timer,
-			threshold: 1, // 只要读到字节就重置计时器
-			body:      resp.Body,
-		}
-
-		n, copyErr := io.Copy(io.MultiWriter(buf, bar), body)
-		resp.Body.Close()
-		timer.Stop()
-		attemptCancel()
-		offset += n
-
-		if copyErr == nil && offset == totalLen {
-			return buf, nil // 完整拿到，才算下载成功
-		}
-		if copyErr == nil {
-			copyErr = fmt.Errorf("short download: got %d of %d bytes", offset, totalLen)
-		}
-	}
-	return nil, fmt.Errorf("download failed after %d attempts (got %d/%d bytes)",
-		downloadMaxAttempts, offset, totalLen)
-}
-
+// Run 下载分片 MP4 并边下边解：HTTP body 直接流入
+// 并发 fragment-reader -> decrypt-workers -> in-order-writer 流水线。
 func Run(adamId string, playlistUrl string, outfile string, Config structs.ConfigSet) error {
 	if Config.LiteServer == "" {
 		return errors.New("lite-server is not configured in config.yaml")
 	}
-	var err error
-	var optstimeout uint
-	optstimeout = 0
-	timeout := time.Duration(optstimeout * uint(time.Millisecond))
 	header := make(http.Header)
 
 	// request media playlist
@@ -154,8 +74,8 @@ func Run(adamId string, playlistUrl string, outfile string, Config structs.Confi
 		return err
 	}
 	req.Header = header
-	// requesting an HLS playlist should be relatively fast, so we set the timeout directly on the client
-	do, err := (&http.Client{Timeout: timeout}).Do(req)
+	// requesting an HLS playlist should be relatively fast
+	do, err := (&http.Client{}).Do(req)
 	if err != nil {
 		return err
 	}
@@ -183,7 +103,7 @@ func Run(adamId string, playlistUrl string, outfile string, Config structs.Confi
 		return err
 	}
 
-	// request mp4
+	// request mp4 and stream it into the decrypt pipeline
 	ctx, cancel := context.WithCancelCause(context.Background())
 	defer cancel(nil)
 	req, err = http.NewRequestWithContext(ctx, "GET", fileUrl.String(), nil)
@@ -192,64 +112,24 @@ func Run(adamId string, playlistUrl string, outfile string, Config structs.Confi
 	}
 	req.Header = header
 
-	var body io.Reader
-	client := &http.Client{Timeout: timeout}
-	if optstimeout > 0 {
-		// create the timer before calling Do so that the timeout covers TCP handshake,
-		// TLS handshake, sending the request and receiving HTTP headers
-		timer := time.AfterFunc(timeout, func() { cancel(ErrTimeout) })
-		do, err = client.Do(req)
-		if err != nil {
-			return err
-		}
-		defer do.Body.Close()
-		body = &TimedResponseBody{
-			timeout:   timeout,
-			timer:     timer,
-			threshold: 256,
-			body:      do.Body,
-		}
-	} else {
-		do, err = client.Do(req)
-		if err != nil {
-			return err
-		}
-		defer do.Body.Close()
-		if do.ContentLength < int64(Config.MaxMemoryLimit*1024*1024) {
-			bar := progressbar.NewOptions64(
-				do.ContentLength,
-				progressbar.OptionClearOnFinish(),
-				progressbar.OptionSetElapsedTime(false),
-				progressbar.OptionSetPredictTime(false),
-				progressbar.OptionShowElapsedTimeOnFinish(),
-				progressbar.OptionShowCount(),
-				progressbar.OptionEnableColorCodes(true),
-				progressbar.OptionShowBytes(true),
-				progressbar.OptionSetDescription("Downloading..."),
-				progressbar.OptionSetTheme(progressbar.Theme{
-					Saucer:        "",
-					SaucerHead:    "",
-					SaucerPadding: "",
-					BarStart:      "",
-					BarEnd:        "",
-				}),
-			)
-			buffer, err := downloadWithResume(ctx, client, fileUrl.String(), header, do.ContentLength, bar)
-			if err != nil {
-				return err // 下载没完成就失败退出，绝不进入解密
-			}
+	do, err = (&http.Client{}).Do(req)
+	if err != nil {
+		return err
+	}
+	defer do.Body.Close()
+	totalLen := do.ContentLength
 
-			body = buffer
-			fmt.Print("Downloaded\n")
-		} else {
-			body = do.Body
-		}
+	// 空闲超时检测：没有新数据到达就取消本次请求
+	timer := time.AfterFunc(downloadIdleTimeout, func() { cancel(ErrTimeout) })
+	body := &streamBody{
+		timeout:   downloadIdleTimeout,
+		timer:     timer,
+		threshold: 1, // 只要读到字节就重置计时器
+		body:      do.Body,
 	}
 
-	var totalLen int64
-	totalLen = do.ContentLength
-
 	err = downloadAndDecryptFile(Config.LiteServer, body, outfile, adamId, segments, totalLen, Config)
+	timer.Stop()
 	if err != nil {
 		return err
 	}
