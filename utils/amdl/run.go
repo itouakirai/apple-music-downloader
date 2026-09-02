@@ -7,6 +7,7 @@ import (
 	"log"
 	"main/utils/ampapi"
 	"main/utils/httputil"
+	"main/utils/runv4"
 	"main/utils/structs"
 	"net/url"
 	"os"
@@ -34,6 +35,10 @@ func Main() {
 	}
 	if err := httputil.Init(Config.Proxy); err != nil {
 		fmt.Printf("proxy config error: %v\n", err)
+		return
+	}
+	if err := runv4.Init(); err != nil {
+		fmt.Printf("temari library error: %v\n", err)
 		return
 	}
 	token, err := ampapi.GetToken()
