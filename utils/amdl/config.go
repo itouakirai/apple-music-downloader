@@ -72,20 +72,36 @@ func flagValueFromArgs(args []string, name string) string {
 }
 
 func loadConfig() error {
-	// config.yaml.example is the source of defaults: every field not present
-	// in config.yaml falls back to the value from config.yaml.example.
+	userData, err := os.ReadFile("config.yaml")
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return fmt.Errorf("read config.yaml: %w", err)
+		}
+		userData = nil
+	}
+
 	exampleData, err := os.ReadFile("config.yaml.example")
 	if err != nil {
-		return fmt.Errorf("read config.yaml.example: %w", err)
+		if !os.IsNotExist(err) {
+			return fmt.Errorf("read config.yaml.example: %w", err)
+		}
+		exampleData = nil
 	}
+
+	// config.yaml.example supplies defaults when it is available. A valid
+	// config.yaml remains enough to run without the example file.
+	if userData == nil && exampleData == nil {
+		return errors.New("config file not found: provide config.yaml")
+	}
+	if exampleData == nil && userData != nil {
+		fmt.Println("Warning: config.yaml.example not found, using config.yaml only")
+	}
+
 	if err := yaml.Unmarshal(exampleData, &Config); err != nil {
 		return fmt.Errorf("parse config.yaml.example: %w", err)
 	}
 
-	userData, err := os.ReadFile("config.yaml")
-	if err != nil {
-		fmt.Println("Warning: config.yaml not found, using defaults from config.yaml.example")
-	} else {
+	if userData != nil {
 		if err := yaml.Unmarshal(userData, &Config); err != nil {
 			return fmt.Errorf("parse config.yaml: %w", err)
 		}
@@ -104,6 +120,8 @@ func loadConfig() error {
 			fmt.Println("Warning: config.yaml is missing fields, using defaults from config.yaml.example for them.")
 			fmt.Println("  Missing fields:", strings.Join(missing, ", "))
 		}
+	} else if exampleData != nil {
+		fmt.Println("Warning: config.yaml not found, using defaults from config.yaml.example")
 	}
 
 	if len(Config.Storefront) != 2 {
