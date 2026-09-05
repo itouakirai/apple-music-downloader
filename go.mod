@@ -1,4 +1,4 @@
-module main
+module amdl
 
 go 1.23.1
 

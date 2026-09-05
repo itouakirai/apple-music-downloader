@@ -11,5 +11,7 @@
 !/PROXY-SETUP.md
 !/utils/
 !/utils/**
+!/internal/
+!/internal/**
 !/cmd/
 !/cmd/**

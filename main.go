@@ -1,7 +1,7 @@
 package main
 
-import "main/utils/amdl"
+import "amdl/internal/app"
 
 func main() {
-	amdl.Main()
+	app.Main()
 }
